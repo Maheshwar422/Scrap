@@ -1,0 +1,10 @@
+{
+  "name": "E-Waste Connect",
+  "description": "Digital Platform for Formal E-Waste Collection and Recycling connecting informal collectors with verified recyclers.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
