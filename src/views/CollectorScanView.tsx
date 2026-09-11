@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { UserAccount, AIAnalysisResult, ItemCondition, MaterialLot, Language } from "../types";
 import { TRANSLATIONS } from "../data/translations";
-import { calculateFairValue, E_WASTE_PRICE_CATALOG } from "../data/pricingDataset";
+import { calculateFairValue, E_WASTE_PRICE_CATALOG, HIERARCHICAL_TAXONOMY } from "../data/pricingDataset";
 import { SafetyCard } from "../components/SafetyCard";
 import { AudioButton } from "../components/AudioButton";
 import {
@@ -19,6 +19,10 @@ import {
   ShieldCheck,
   Video,
   X,
+  Tag,
+  ScanText,
+  HelpCircle,
+  Edit3,
 } from "lucide-react";
 
 interface CollectorScanViewProps {
@@ -52,6 +56,11 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
+
+  // Manual Category Fallback state
+  const [isManualCategoryMode, setIsManualCategoryMode] = useState(false);
+  const [selectedMajorCategory, setSelectedMajorCategory] = useState("");
+  const [selectedSubcategory, setSelectedSubcategory] = useState("");
 
   // Weight & Condition state (Section 7)
   const [weightValue, setWeightValue] = useState<string>("2.5");
@@ -215,8 +224,20 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
   const weightInKg = weightUnit === "g" ? numericWeight / 1000 : numericWeight;
 
   // Valuation Calculation
-  const activeCategory = aiResult?.category || "Mixed Electronic Scrap";
-  const valuation = calculateFairValue(activeCategory, weightInKg, condition);
+  const activeCategory = isManualCategoryMode && selectedMajorCategory
+    ? selectedMajorCategory
+    : aiResult?.category || "Mixed Electronic Scrap";
+  const activeSubcategory = isManualCategoryMode && selectedSubcategory
+    ? selectedSubcategory
+    : aiResult?.subcategory;
+  const activeBrand = aiResult?.brand;
+  const valuation = calculateFairValue(
+    activeCategory,
+    weightInKg,
+    condition,
+    activeSubcategory,
+    activeBrand
+  );
 
   // Proceed to Step 3
   const handleConfirmWeight = () => {
@@ -514,52 +535,198 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
             <AudioButton textToSpeak={step2Narration} lang={lang} size="sm" />
           </div>
 
-          {/* AI Result Card (Section 6) */}
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 space-y-3">
-            <div className="flex items-center justify-between">
+          {/* AI Result Card (Cycle 2 Enhanced) */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50 to-slate-50 border border-emerald-200 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-emerald-700" />
-                <span className="font-bold text-xs uppercase tracking-wider text-emerald-950">
-                  AI Vision Classification
+                <span className="font-extrabold text-xs uppercase tracking-wider text-emerald-950">
+                  Cycle 2 Vision & Brand AI
                 </span>
               </div>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-xs">
-                {aiResult.confidence}% Confidence
-              </span>
+              <div className="flex items-center gap-1.5">
+                {aiResult.confidenceLevel && (
+                  <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${
+                    aiResult.confidenceLevel === "HIGH"
+                      ? "bg-emerald-200 text-emerald-900"
+                      : aiResult.confidenceLevel === "MEDIUM"
+                      ? "bg-amber-200 text-amber-900"
+                      : "bg-rose-200 text-rose-900"
+                  }`}>
+                    {aiResult.confidenceLevel} CONFIDENCE
+                  </span>
+                )}
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-sm">
+                  {aiResult.confidence}%
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-xs text-slate-500 block font-medium">{t.detectedItem}</span>
-                <span className="font-bold text-slate-900 text-base">{aiResult.detectedItem}</span>
+            {/* Category & Subcategory Tags */}
+            <div className="p-3.5 bg-white rounded-xl border border-emerald-100 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-1">
+                <span className="text-xs text-slate-500 font-semibold">{t.category}</span>
+                {aiResult.subcategory && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[11px] font-bold flex items-center gap-1">
+                    <Tag className="w-3 h-3" />
+                    Subcategory: {aiResult.subcategory}
+                  </span>
+                )}
+              </div>
+              <div className="text-lg font-black text-slate-900">
+                {activeCategory}
+              </div>
+            </div>
+
+            {/* Brand, Product & Model Recognition Box */}
+            <div className="p-3.5 bg-white rounded-xl border border-emerald-100 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400 block font-medium">Recognized Brand:</span>
+                <span className="font-bold text-slate-900 text-sm">
+                  {aiResult.brand || "Unknown / Unbranded"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Product Family:</span>
+                <span className="font-bold text-slate-800">
+                  {aiResult.productFamily || "Not specified"}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">Model Identification:</span>
+                <span className={`font-bold ${
+                  aiResult.model && !aiResult.model.toLowerCase().includes("unknown") && !aiResult.model.toLowerCase().includes("not")
+                    ? "text-emerald-700"
+                    : "text-slate-500 italic"
+                }`}>
+                  {aiResult.model || "Not confidently identified"}
+                </span>
+              </div>
+            </div>
+
+            {/* OCR / Visible Text Markings */}
+            {aiResult.visibleTextOCR && aiResult.visibleTextOCR.length > 0 && (
+              <div className="p-3 bg-white rounded-xl border border-emerald-100 text-xs space-y-1.5">
+                <div className="flex items-center gap-1.5 text-slate-600 font-semibold">
+                  <ScanText className="w-4 h-4 text-emerald-600" />
+                  <span>OCR / Visible Markings Detected:</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {aiResult.visibleTextOCR.map((txt, idx) => (
+                    <span key={idx} className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] border border-slate-200">
+                      "{txt}"
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Precious Metal Caution Banner (Section 15 MANDATE) */}
+            {aiResult.isPreciousMetalBearing && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-400/60 text-amber-950 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                  <Sparkles className="w-4 h-4 text-amber-600" />
+                  <span>Potential Precious-Metal-Bearing Scrap Detected</span>
+                </div>
+                <p className="text-amber-900/90 text-[11px] leading-relaxed">
+                  {aiResult.preciousMetalDisclaimer ||
+                    "Gold/silver-colored contacts or high-grade components detected. Exact precious metal content cannot be determined from a photograph; professional assay testing is required."}
+                </p>
+              </div>
+            )}
+
+            {/* Materials & Condition */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 bg-white rounded-xl border border-emerald-100 space-y-1">
+                <span className="text-slate-500 block font-semibold">{t.conditionAssessment}</span>
+                <p className="text-slate-800">{aiResult.conditionAssessment}</p>
               </div>
 
-              <div className="p-3 bg-white rounded-xl border border-emerald-100">
-                <span className="text-xs text-slate-500 block font-medium">{t.category}</span>
-                <span className="font-bold text-emerald-800 text-base">{aiResult.category}</span>
+              <div className="p-3 bg-white rounded-xl border border-emerald-100 space-y-1">
+                <span className="text-slate-500 block font-semibold">{t.potentialMaterials}</span>
+                <p className="text-slate-800">{aiResult.potentialMaterials}</p>
               </div>
             </div>
 
-            <div className="p-3 bg-white rounded-xl border border-emerald-100 text-xs space-y-1">
-              <span className="text-slate-500 block font-semibold">{t.conditionAssessment}</span>
-              <p className="text-slate-800">{aiResult.conditionAssessment}</p>
+            {/* Manual Fallback Toggle Button */}
+            <div className="pt-1 flex items-center justify-between">
+              <div className="text-[11px] text-slate-500 italic flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                <span>{t.aiDisclaimer}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsManualCategoryMode(!isManualCategoryMode)}
+                className="px-3 py-1.5 rounded-xl bg-white hover:bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{isManualCategoryMode ? "Use AI Classification" : "Correct Category / Fallback"}</span>
+              </button>
             </div>
 
-            <div className="p-3 bg-white rounded-xl border border-emerald-100 text-xs space-y-1">
-              <span className="text-slate-500 block font-semibold">{t.potentialMaterials}</span>
-              <p className="text-slate-800">{aiResult.potentialMaterials}</p>
-            </div>
+            {/* Manual Fallback Dropdown Selector */}
+            {isManualCategoryMode && (
+              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-300 space-y-3 text-xs animate-fade-in">
+                <div className="flex items-center gap-2 text-amber-900 font-bold">
+                  <HelpCircle className="w-4 h-4 text-amber-600" />
+                  <span>Manual Category Selection (Fallback Mode)</span>
+                </div>
+                <p className="text-amber-800 text-[11px]">
+                  Select the appropriate category and subcategory from the e-waste reference taxonomy:
+                </p>
 
-            <div className="text-[11px] text-slate-500 italic px-1 flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-              <span>{t.aiDisclaimer}</span>
-            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-950 mb-1">
+                      Major Category
+                    </label>
+                    <select
+                      value={selectedMajorCategory}
+                      onChange={(e) => {
+                        setSelectedMajorCategory(e.target.value);
+                        setSelectedSubcategory("");
+                      }}
+                      className="w-full p-2.5 rounded-lg border border-amber-300 bg-white font-semibold text-slate-900 text-xs"
+                    >
+                      <option value="">-- Choose Category --</option>
+                      {HIERARCHICAL_TAXONOMY.map((item, idx) => (
+                        <option key={idx} value={item.majorCategory}>
+                          {item.majorCategory}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-950 mb-1">
+                      Subcategory / Item Type
+                    </label>
+                    <select
+                      value={selectedSubcategory}
+                      onChange={(e) => setSelectedSubcategory(e.target.value)}
+                      className="w-full p-2.5 rounded-lg border border-amber-300 bg-white font-semibold text-slate-900 text-xs"
+                    >
+                      <option value="">-- Choose Subcategory --</option>
+                      {selectedMajorCategory &&
+                        HIERARCHICAL_TAXONOMY.find(
+                          (h) => h.majorCategory === selectedMajorCategory
+                        )?.subcategories.map((sub, sidx) => (
+                          <option key={sidx} value={sub}>
+                            {sub}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Safety Card (Section 19) */}
           <SafetyCard
             safetyWarning={aiResult.safetyWarning}
-            category={aiResult.category}
+            category={activeCategory}
             lang={lang}
           />
 
@@ -708,6 +875,18 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
               </div>
             </div>
 
+            {/* Cycle 2 Valuation Explanation */}
+            {valuation.valuationExplanation && (
+              <div className="p-3 rounded-xl bg-white/10 border border-white/15 text-xs text-emerald-100 space-y-1">
+                <span className="font-bold text-emerald-300 block text-[11px] uppercase tracking-wider">
+                  Valuation Explanation Basis:
+                </span>
+                <p className="text-[11px] leading-relaxed opacity-95">
+                  {valuation.valuationExplanation}
+                </p>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-white/15 text-xs text-emerald-200/90 flex items-start gap-2">
               <Info className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
               <span>{t.valuationDisclaimer}</span>
@@ -720,14 +899,14 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
               Material Lot Summary
             </h3>
 
-            <div className="grid grid-cols-2 gap-3 text-slate-700">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-slate-700">
               <div>
-                <span className="text-slate-400 block font-medium">Detected Item:</span>
-                <span className="font-bold text-slate-900">{aiResult.detectedItem}</span>
+                <span className="text-slate-400 block font-medium">Item Name:</span>
+                <span className="font-bold text-slate-900 truncate block">{aiResult.detectedItem}</span>
               </div>
               <div>
                 <span className="text-slate-400 block font-medium">Category:</span>
-                <span className="font-bold text-slate-900">{aiResult.category}</span>
+                <span className="font-bold text-slate-900">{activeCategory}</span>
               </div>
               <div>
                 <span className="text-slate-400 block font-medium">Weight:</span>

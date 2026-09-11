@@ -28,10 +28,31 @@ export type ItemCondition = "intact" | "used" | "damaged" | "dismantled";
 export interface AIAnalysisResult {
   detectedItem: string;
   category: string;
+  subcategory?: string;
+  brand?: string;
+  productFamily?: string;
+  model?: string;
+  visibleTextOCR?: string[];
   confidence: number;
+  confidenceLevel?: "HIGH" | "MEDIUM" | "LOW";
+  confidenceBreakdown?: {
+    category?: "HIGH" | "MEDIUM" | "LOW";
+    brand?: "HIGH" | "MEDIUM" | "LOW";
+    model?: "HIGH" | "MEDIUM" | "LOW";
+    material?: "HIGH" | "MEDIUM" | "LOW";
+  };
   conditionAssessment: string;
   potentialMaterials: string;
+  isPreciousMetalBearing?: boolean;
+  preciousMetalDisclaimer?: string;
+  isMixedScrap?: boolean;
+  mixedItemsDetected?: string[];
   safetyWarning: string;
+  valuationExplanation?: string;
+  estimatedResaleValueRange?: {
+    min: number;
+    max: number;
+  };
   provider?: string;
 }
 
