@@ -51,3 +51,10 @@ npm run dev
 # Run TypeScript type check
 npm run lint
 ```
+
+## Render deployment
+
+Set `GEMINI_API_KEY` in the Render service environment (never in the client or
+repository). Use `npm run build` as the build command and `npm start` as the
+start command. The camera endpoint is `/api/identify-ewaste`; it returns a
+clear error when Gemini is unavailable rather than inventing a scrap category.

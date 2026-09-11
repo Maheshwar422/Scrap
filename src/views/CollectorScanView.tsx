@@ -198,20 +198,31 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
         return;
       }
 
+      const imageDataUrl = selectedImage.startsWith("data:image/")
+        ? selectedImage
+        : await fetch(selectedImage)
+            .then(async (response) => {
+              if (!response.ok) throw new Error("Could not load the selected image.");
+              const blob = await response.blob();
+              return await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error("Could not prepare the selected image."));
+                reader.readAsDataURL(blob);
+              });
+            });
+      const mimeType = imageDataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,/i)?.[1] || "image/jpeg";
       const res = await fetch("/api/identify-ewaste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: selectedImage,
-          mimeType: "image/jpeg",
+          imageBase64: imageDataUrl,
+          mimeType,
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Server analysis error");
-      }
-
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Server analysis error");
       if (data.success && data.data) {
         setAiResult({
           ...data.data,
@@ -222,18 +233,8 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
         throw new Error("Invalid analysis response");
       }
     } catch (err: any) {
-      console.warn("AI endpoint error, falling back to instant classifier:", err);
-      // Fallback detection
-      setAiResult({
-        detectedItem: "Computer Motherboard & Heatsink Scrap",
-        category: "Computer Motherboard",
-        confidence: 92,
-        conditionAssessment: "Used / scrap grade",
-        potentialMaterials: "Gold-plated pins, electrolytic copper, aluminium heatsinks",
-        safetyWarning: "Handle board edges carefully. Avoid crude acid burning.",
-        provider: "Backup E-Waste Neural Classifier",
-      });
-      setCurrentStep(2);
+      console.warn("AI endpoint error:", err);
+      setAnalysisError(err instanceof Error ? err.message : "Image identification failed. Please try again.");
     } finally {
       setIsAnalyzing(false);
     }

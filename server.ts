@@ -53,6 +53,10 @@ function resolveGeminiApiKey(): string | null {
 }
 
 let aiClient: GoogleGenAI | null = null;
+// Keep this list to models that are available to the API key used by this
+// application. The previous 3.8/3.5 names do not exist, so image requests
+// never reached Gemini Vision.
+const VISION_MODELS = ["gemini-3.6-flash", "gemini-3-flash-preview"];
 function getGeminiClient(): GoogleGenAI | null {
   const apiKey = resolveGeminiApiKey();
   if (!apiKey) {
@@ -106,8 +110,7 @@ async function startServer() {
       status: "ok",
       appName: "E-Waste Connect",
       hasGeminiKey: !!activeKey,
-      keyPreview: activeKey ? `${activeKey.substring(0, 6)}...${activeKey.substring(activeKey.length - 4)}` : null,
-      activeModel: "gemini-3.8-flash",
+      activeModel: VISION_MODELS[0],
       timestamp: new Date().toISOString(),
     });
   });
@@ -122,7 +125,10 @@ async function startServer() {
       }
 
       // Clean base64 string if data URI header is present
-      const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "");
+      const safeMimeType = /^image\/(jpeg|png|webp|gif)$/i.test(mimeType)
+        ? mimeType.toLowerCase()
+        : "image/jpeg";
 
       const gemini = getGeminiClient();
 
@@ -189,9 +195,9 @@ Return a strictly valid JSON object matching this structure:
 Do not invent physical weight or exact monetary value.`;
 
           console.log("[AI API] Sending image to Gemini Vision API...");
-          const modelsToTry = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"];
+          const modelsToTry = VISION_MODELS;
           let response: any = null;
-          let usedModel = "gemini-3.8-flash";
+          let usedModel = modelsToTry[0];
 
           for (const modelName of modelsToTry) {
             try {
@@ -201,7 +207,7 @@ Do not invent physical weight or exact monetary value.`;
                   parts: [
                     {
                       inlineData: {
-                        mimeType: mimeType || "image/jpeg",
+                        mimeType: safeMimeType,
                         data: cleanBase64,
                       },
                     },
@@ -224,6 +230,9 @@ Do not invent physical weight or exact monetary value.`;
           if (response) {
             const rawText = response.text || "{}";
             const parsed = JSON.parse(rawText);
+            if (!parsed.detectedItem || !parsed.category || !parsed.confidence) {
+              throw new Error("Gemini returned an incomplete identification result.");
+            }
             console.log(`[AI API] Successfully identified e-waste with ${usedModel}:`, parsed.detectedItem);
             return res.json({
               success: true,
@@ -232,116 +241,18 @@ Do not invent physical weight or exact monetary value.`;
             });
           }
         } catch (apiError: any) {
-          console.warn("[AI API] Gemini Vision call encountered an error, using intelligent fallback:", apiError?.message);
+          console.error("[AI API] Gemini Vision call failed:", apiError?.message);
+          return res.status(502).json({
+            error: "Vision service could not analyze this image.",
+            code: "VISION_ANALYSIS_FAILED",
+          });
         }
       } else {
-        console.warn("[AI API] No Gemini API key loaded, engaging fallback classifier.");
+        return res.status(503).json({
+          error: "Vision service is not configured. Add GEMINI_API_KEY to the server environment.",
+          code: "VISION_NOT_CONFIGURED",
+        });
       }
-
-      // Intelligent demo-ready fallback analysis with Cycle 2 structured identification
-      const fallbackSelections = [
-        {
-          detectedItem: "Heavy Stripped Copper Electrical Cable Bundle",
-          category: "Non-Ferrous Metals",
-          subcategory: "Copper Wire",
-          brand: "Unbranded",
-          productFamily: "Electrical Wiring",
-          model: "Not applicable",
-          visibleTextOCR: ["IS 694 1100V HEAVY COPPER"],
-          confidence: 94,
-          confidenceLevel: "HIGH" as const,
-          confidenceBreakdown: {
-            category: "HIGH" as const,
-            brand: "HIGH" as const,
-            model: "HIGH" as const,
-            material: "HIGH" as const,
-          },
-          conditionAssessment: "Stripped & bundled high-grade copper scrap",
-          potentialMaterials: "High-grade electrolytic copper (99.9%), PVC residues",
-          isPreciousMetalBearing: false,
-          safetyWarning: "Do not burn insulation open air. Avoid toxic fumes.",
-          valuationExplanation: "Valued based on high purity stripped copper scrap rate per kg.",
-        },
-        {
-          detectedItem: "Dell Inspiron Laptop System Board",
-          category: "Computer Equipment",
-          subcategory: "Computer Motherboard",
-          brand: "Dell",
-          productFamily: "Inspiron Series",
-          model: "Not confidently identified",
-          visibleTextOCR: ["DELL CN-0N179F", "MADE IN TAIWAN"],
-          confidence: 91,
-          confidenceLevel: "HIGH" as const,
-          confidenceBreakdown: {
-            category: "HIGH" as const,
-            brand: "HIGH" as const,
-            model: "MEDIUM" as const,
-            material: "HIGH" as const,
-          },
-          conditionAssessment: "Used / intact motherboard with CPU socket & RAM slots",
-          potentialMaterials: "Gold-plated connectors, copper foil, aluminium heatsink, silicon ICs",
-          isPreciousMetalBearing: true,
-          preciousMetalDisclaimer: "Potential precious-metal-bearing electronic scrap. Gold-colored contacts detected. Exact metal quantity cannot be determined from photograph; professional assay required.",
-          safetyWarning: "Handle board edges carefully. Do not attempt crude chemical acid extraction.",
-          valuationExplanation: "Valued on computer motherboard reference pricing with gold contact appreciation.",
-        },
-        {
-          detectedItem: "Apple iPhone 12 Logic Board & Chassis",
-          category: "Mobile & Personal Electronics",
-          subcategory: "Mobile Phone",
-          brand: "Apple",
-          productFamily: "iPhone",
-          model: "iPhone 12",
-          visibleTextOCR: ["APPLE A2403", "DESIGNED BY APPLE IN CALIFORNIA"],
-          confidence: 95,
-          confidenceLevel: "HIGH" as const,
-          confidenceBreakdown: {
-            category: "HIGH" as const,
-            brand: "HIGH" as const,
-            model: "HIGH" as const,
-            material: "HIGH" as const,
-          },
-          conditionAssessment: "Damaged screen, intact internal phone motherboard & chassis",
-          potentialMaterials: "Lithium battery cell, gold interconnects, copper heat shield, glass",
-          isPreciousMetalBearing: true,
-          preciousMetalDisclaimer: "High-density mobile phone logic board containing gold/palladium contacts. Professional assay required for exact content.",
-          safetyWarning: "Ensure lithium-ion pouch is unpunctured. Do NOT submerge or pierce cell.",
-          valuationExplanation: "Valued based on mobile phone logic board reference rate.",
-        },
-        {
-          detectedItem: "Server High-Grade Telecom Circuit Board",
-          category: "Precious-Metal-Bearing Electronic Scrap",
-          subcategory: "Gold-bearing PCB",
-          brand: "Cisco",
-          productFamily: "Enterprise Networking",
-          model: "Not confidently identified",
-          visibleTextOCR: ["CISCO 73-10492-01", "GOLD FINGERS REV B"],
-          confidence: 89,
-          confidenceLevel: "HIGH" as const,
-          confidenceBreakdown: {
-            category: "HIGH" as const,
-            brand: "HIGH" as const,
-            model: "MEDIUM" as const,
-            material: "HIGH" as const,
-          },
-          conditionAssessment: "Used server backplane with heavy gold edge fingers",
-          potentialMaterials: "Gold edge contacts, tantalum capacitors, copper laminate",
-          isPreciousMetalBearing: true,
-          preciousMetalDisclaimer: "High-grade gold-bearing PCB scrap. Exact precious metal yield requires certified refining assay.",
-          safetyWarning: "Protect gold contact fingers from mechanical scratching.",
-          valuationExplanation: "Valued under high-grade gold-bearing PCB reference scrap category.",
-        },
-      ];
-
-      // Select deterministically based on image length hash
-      const hash = cleanBase64.length % fallbackSelections.length;
-      const fallbackResult = fallbackSelections[hash];
-
-      return res.json({
-        success: true,
-        provider: "intelligent-engine-fallback",
-        data: fallbackResult,
-      });
     } catch (err: any) {
       console.error("Analysis error:", err);
       return res.status(500).json({
