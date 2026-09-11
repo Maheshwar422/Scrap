@@ -62,8 +62,9 @@
 | 2026-09-11 | Antigravity | Cycle 2 | Expanded `pricingDataset.ts` | Added 30+ expanded categories, brand database, hierarchical taxonomy, and upgraded `calculateFairValue` | DONE |
 | 2026-09-11 | Antigravity | Cycle 2 | Upgraded `server.ts` | Gemini 3.8 Vision structured prompt & Cycle 2 intelligent fallbacks | DONE |
 | 2026-09-11 | Antigravity | Cycle 2 | Updated `CollectorScanView.tsx` | Added Cycle 2 AI Cards, Brand/Model info, OCR tags, Precious Metal caution box, Manual Fallback selector, Valuation Explanation | DONE |
-| 2026-09-11 | Antigravity | Cycle 2 | TypeScript verification | `npm run lint` (`tsc --noEmit`) passed with 0 errors | DONE |
 | 2026-09-11 | Antigravity | Cycle 2 | Documentation handoff | Created `README.md` and `DEVELOPMENT_STATUS.md` | DONE |
+| 2026-09-11 | Antigravity | Bugfix & Integration | Gemini API Key & Camera Connection | Fixed multi-source `.env` loading, added model fallback (`gemini-3.8-flash` -> `gemini-3.5-flash`), live UI connection indicator, verified live image classification | DONE |
+| 2026-09-11 | Antigravity | Git Remote | Sync to Maheshwar422/Scrap | Configured git remote origin, ensured `.env` and `src/.env` are ignored, staged and pushed all updates | DONE |
 
 ---
 

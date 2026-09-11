@@ -1,19 +1,66 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
 
+// Helper to robustly locate and load Gemini API key from all possible locations
+function resolveGeminiApiKey(): string | null {
+  if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 10 && !process.env.GEMINI_API_KEY.includes("MY_GEMINI_API_KEY")) {
+    return process.env.GEMINI_API_KEY.trim();
+  }
+  if (process.env.VITE_GEMINI_API_KEY && process.env.VITE_GEMINI_API_KEY.trim().length > 10) {
+    return process.env.VITE_GEMINI_API_KEY.trim();
+  }
+
+  const candidateFiles = [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), "src", ".env"),
+    path.resolve(__dirname, ".env"),
+    path.resolve(__dirname, "src", ".env"),
+  ];
+
+  for (const envFile of candidateFiles) {
+    try {
+      if (fs.existsSync(envFile)) {
+        const content = fs.readFileSync(envFile, "utf-8");
+        // Check for GEMINI_API_KEY=...
+        const match = content.match(/GEMINI_API_KEY\s*=\s*["']?([^"'\r\n]+)["']?/i);
+        if (match && match[1] && match[1].trim().length > 10 && !match[1].includes("MY_GEMINI_API_KEY")) {
+          const key = match[1].trim();
+          process.env.GEMINI_API_KEY = key;
+          return key;
+        }
+        // Check for raw API key string (e.g. starting with AQ. or AIza)
+        const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        for (const line of lines) {
+          if ((line.startsWith("AQ.") || line.startsWith("AIza")) && line.length > 20) {
+            const cleanKey = line.replace(/["';]/g, "").trim();
+            process.env.GEMINI_API_KEY = cleanKey;
+            return cleanKey;
+          }
+        }
+      }
+    } catch {
+      // Ignore file reading errors
+    }
+  }
+
+  return null;
+}
+
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = resolveGeminiApiKey();
+  if (!apiKey) {
     return null;
   }
   if (!aiClient) {
     aiClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
+      apiKey,
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build",
@@ -46,7 +93,7 @@ const SUPPORTED_CATEGORIES = [
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Allow larger payload for camera image captures
   app.use(express.json({ limit: "25mb" }));
@@ -54,10 +101,13 @@ async function startServer() {
 
   // Health check
   app.get("/api/health", (_req, res) => {
+    const activeKey = resolveGeminiApiKey();
     res.json({
       status: "ok",
       appName: "E-Waste Connect",
-      hasGeminiKey: !!process.env.GEMINI_API_KEY,
+      hasGeminiKey: !!activeKey,
+      keyPreview: activeKey ? `${activeKey.substring(0, 6)}...${activeKey.substring(activeKey.length - 4)}` : null,
+      activeModel: "gemini-3.8-flash",
       timestamp: new Date().toISOString(),
     });
   });
@@ -138,36 +188,54 @@ Return a strictly valid JSON object matching this structure:
 }
 Do not invent physical weight or exact monetary value.`;
 
-          const response = await gemini.models.generateContent({
-            model: "gemini-3.8-flash",
-            contents: {
-              parts: [
-                {
-                  inlineData: {
-                    mimeType: mimeType || "image/jpeg",
-                    data: cleanBase64,
-                  },
-                },
-                {
-                  text: prompt,
-                },
-              ],
-            },
-            config: {
-              responseMimeType: "application/json",
-            },
-          });
+          console.log("[AI API] Sending image to Gemini Vision API...");
+          const modelsToTry = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-flash-latest"];
+          let response: any = null;
+          let usedModel = "gemini-3.8-flash";
 
-          const rawText = response.text || "{}";
-          const parsed = JSON.parse(rawText);
-          return res.json({
-            success: true,
-            provider: "gemini-3.8-flash",
-            data: parsed,
-          });
+          for (const modelName of modelsToTry) {
+            try {
+              response = await gemini.models.generateContent({
+                model: modelName,
+                contents: {
+                  parts: [
+                    {
+                      inlineData: {
+                        mimeType: mimeType || "image/jpeg",
+                        data: cleanBase64,
+                      },
+                    },
+                    {
+                      text: prompt,
+                    },
+                  ],
+                },
+                config: {
+                  responseMimeType: "application/json",
+                },
+              });
+              usedModel = modelName;
+              break;
+            } catch (modelErr: any) {
+              console.warn(`[AI API] Model ${modelName} failed or unavailable:`, modelErr?.message || modelErr);
+            }
+          }
+
+          if (response) {
+            const rawText = response.text || "{}";
+            const parsed = JSON.parse(rawText);
+            console.log(`[AI API] Successfully identified e-waste with ${usedModel}:`, parsed.detectedItem);
+            return res.json({
+              success: true,
+              provider: `Gemini Vision AI (${usedModel})`,
+              data: parsed,
+            });
+          }
         } catch (apiError: any) {
-          console.warn("Gemini Vision failed or rate-limited, engaging intelligent heuristic classifier:", apiError?.message);
+          console.warn("[AI API] Gemini Vision call encountered an error, using intelligent fallback:", apiError?.message);
         }
+      } else {
+        console.warn("[AI API] No Gemini API key loaded, engaging fallback classifier.");
       }
 
       // Intelligent demo-ready fallback analysis with Cycle 2 structured identification

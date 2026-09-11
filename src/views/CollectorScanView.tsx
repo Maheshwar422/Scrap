@@ -56,6 +56,26 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
+  const [apiStatus, setApiStatus] = useState<{
+    connected: boolean;
+    model?: string;
+    loading: boolean;
+  }>({ connected: false, loading: true });
+
+  React.useEffect(() => {
+    fetch("/api/health")
+      .then((res) => res.json())
+      .then((data) => {
+        setApiStatus({
+          connected: !!data.hasGeminiKey,
+          model: data.activeModel || "gemini-3.8-flash",
+          loading: false,
+        });
+      })
+      .catch(() => {
+        setApiStatus({ connected: false, loading: false });
+      });
+  }, []);
 
   // Manual Category Fallback state
   const [isManualCategoryMode, setIsManualCategoryMode] = useState(false);
@@ -358,11 +378,26 @@ export const CollectorScanView: React.FC<CollectorScanViewProps> = ({
       {/* STEP 1: PHOTO CAPTURE / UPLOAD (Section 5) */}
       {currentStep === 1 && (
         <div className="bg-white/85 backdrop-blur-xl rounded-3xl p-6 sm:p-8 shadow-xl border border-white/70 space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                {t.step1Title}
-              </h2>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                  {t.step1Title}
+                </h2>
+                {!apiStatus.loading && (
+                  apiStatus.connected ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11px] font-bold shadow-xs">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Gemini Vision: Connected ({apiStatus.model})
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-bold shadow-xs">
+                      <span className="w-2 h-2 rounded-full bg-amber-500" />
+                      Offline Classifier Active
+                    </span>
+                  )
+                )}
+              </div>
               <p className="text-xs sm:text-sm text-slate-600 mt-0.5">{t.step1Desc}</p>
             </div>
             <AudioButton textToSpeak={step1Narration} lang={lang} size="sm" />
